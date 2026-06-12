@@ -1,0 +1,80 @@
+name: Deploy Voting App to AKS
+
+on:
+  push:
+    branches:
+      - feature/github-actions
+    
+jobs:
+  build-and-deploy:
+    if: ${{ github.event.head_commit.message != '[skip ci]' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Step 2: Log in to DockerHub
+      - name: Log in to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Step 3: Build & push Vote service
+      - name: Build and push Vote service
+        run: |
+          IMAGE_NAME=rishabhraj7/voting-app-vote:${{ github.sha }}
+          docker build -t $IMAGE_NAME -f vote/Dockerfile vote/
+          docker push $IMAGE_NAME
+          echo "VOTE_IMAGE=$IMAGE_NAME" >> $GITHUB_ENV
+
+      # Step 4: Build & push Result service
+      - name: Build and push Result service
+        run: |
+          IMAGE_NAME=rishabhraj7/voting-app-result:${{ github.sha }}
+          docker build -t $IMAGE_NAME -f result/Dockerfile result/
+          docker push $IMAGE_NAME
+          echo "RESULT_IMAGE=$IMAGE_NAME" >> $GITHUB_ENV
+
+      # Step 5: Build & push Worker service
+      - name: Build and push Worker service
+        run: |
+          IMAGE_NAME=rishabhraj7/voting-app-worker:${{ github.sha }}
+          docker build -t $IMAGE_NAME -f worker/Dockerfile worker/
+          docker push $IMAGE_NAME
+          echo "WORKER_IMAGE=$IMAGE_NAME" >> $GITHUB_ENV
+
+      # Step 6: Build & push Seed-Data service
+      - name: Build and push Seed-Data service
+        run: |
+          IMAGE_NAME=rishabhraj7/voting-app-seed:${{ github.sha }}
+          docker build -t $IMAGE_NAME -f seed-data/Dockerfile seed-data/
+          docker push $IMAGE_NAME
+          echo "SEED_IMAGE=$IMAGE_NAME" >> $GITHUB_ENV
+
+      # Step 7: Set up kubeconfig from secret
+      - name: Set up kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > $HOME/.kube/config
+
+      # Step 8: Apply manifests
+      - name: Apply Kubernetes Manifests
+        run: |
+          kubectl apply -f k8s-specifications/
+
+      # Step 9: Update Deployments with new images
+      - name: Deploy to AKS
+        run: |
+          kubectl set image deployment/vote vote=$VOTE_IMAGE --namespace=default || true
+          kubectl set image deployment/result result=$RESULT_IMAGE --namespace=default || true
+          kubectl set image deployment/worker worker=$WORKER_IMAGE --namespace=default || true
+       
+      # Step 10: Verify rollout
+      - name: Verify Deployment Rollouts
+        run: |
+          kubectl rollout status deployment/vote --namespace=default
+          kubectl rollout status deployment/result --namespace=default
+          kubectl rollout status deployment/worker --namespace=default
