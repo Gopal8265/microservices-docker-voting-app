@@ -46,12 +46,7 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 sh '''
-                ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no ubuntu@54.204.252.248 << EOF
-                cd ~/microservices-docker-voting-app
-                sudo docker compose pull
-                sudo docker compose up -d
-                sudo docker image prune -f
-                EOF
+                ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no ubuntu@54.204.252.248 "cd ~/microservices-docker-voting-app && sudo docker compose pull && sudo docker compose up -d && sudo docker image prune -f"
                 '''
             }
         }
