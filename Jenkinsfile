@@ -16,6 +16,7 @@ pipeline {
         stage('Verify Docker') {
             steps {
                 sh 'docker --version'
+                sh 'docker buildx version'
                 sh 'docker ps'
             }
         }
@@ -34,27 +35,33 @@ pipeline {
             }
         }
 
-        stage('Build Docker Images') {
+        stage('Build & Push Images') {
             steps {
-                sh 'docker build -t $DOCKER_USER/vote-app:latest ./vote'
-                sh 'docker build -t $DOCKER_USER/result-app:latest ./result'
-                sh 'docker build -t $DOCKER_USER/worker-app:latest ./worker'
+                sh 'docker buildx build --platform linux/amd64 -t $DOCKER_USER/vote-app:latest --push ./vote'
+                sh 'docker buildx build --platform linux/amd64 -t $DOCKER_USER/result-app:latest --push ./result'
+                sh 'docker buildx build --platform linux/amd64 -t $DOCKER_USER/worker-app:latest --push ./worker'
             }
         }
 
-        stage('Push Images') {
+        stage('Deploy to EC2') {
             steps {
-                sh 'docker push $DOCKER_USER/vote-app:latest'
-                sh 'docker push $DOCKER_USER/result-app:latest'
-                sh 'docker push $DOCKER_USER/worker-app:latest'
+                sh '''
+                ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no ubuntu@54.204.252.248 << EOF
+                cd ~/microservices-docker-voting-app
+                sudo docker compose pull
+                sudo docker compose up -d
+                sudo docker image prune -f
+                EOF
+                '''
             }
         }
     }
 
     post {
         success {
-            echo 'Docker images built and pushed successfully!'
+            echo 'Application built, pushed, and deployed successfully!'
         }
+
         failure {
             echo 'Pipeline failed.'
         }
